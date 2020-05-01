@@ -48,9 +48,6 @@ public class Path extends ArrayList<Waypoint> {
 	private long lastWaypointTimeStamp;
 	private boolean timedOut;
 	
-	// True if automatic mode is enabled, this is disabled by default.
-	private boolean autoModeEnabled;
-	
 	// True if retrace is enabled, this is enabled by default.
 	private boolean retraceEnabled;
 	
@@ -62,12 +59,6 @@ public class Path extends ArrayList<Waypoint> {
 	private double retraceMovementSpeed;
 	private double retraceTurnSpeed;
 	private Translation2d lastKnownIntersection;
-	
-	// The robot's drive train. This is only used if automatic mode is active Right now only mecanum drives are supported.
-	private MecanumDrive drivetrain;
-	
-	// The robot's odometry. This is only used if automatic mode is active.
-	private Odometry odometry;
 	
 	// Action lists
 	private List<TriggeredAction> triggeredActions;
@@ -93,7 +84,6 @@ public class Path extends ArrayList<Waypoint> {
 		lastWaypointTimeStamp = 0;
 		retraceMovementSpeed = 1;
 		retraceTurnSpeed = 1;
-		autoModeEnabled = false;
 		retraceEnabled = true;
 		initComplete = false;
 		timedOut = false;
@@ -116,37 +106,31 @@ public class Path extends ArrayList<Waypoint> {
 	 * @throws IllegalStateException If the path is not legal.
 	 */
 	public void init() {
-		// Step 1, verify that the path is valid.
+		// Verify that the path is valid.
 		verifyLegality();
-		// Step 2, check is automatic mode is enabled.
-		if (autoModeEnabled) {
-			// If it is enabled, check to make sure everything is configured and throw exceptions if not.
-			if (drivetrain == null)
-				throw new IllegalStateException("Path initiation failed. Drivetrain is not set.");
-			if (odometry == null)
-				throw new IllegalStateException("Path initiation failed. Odometry is not set.");
-		}
-		// Step 3, mark the init as complete.
+		// Configure unconfigured waypoints.
+		for (int i = 1; i < size(); i++) 
+			((GeneralWaypoint) get(i)).inherit(get(i - 1));
+		// Mark the init as complete.
 		initComplete = true;
 	}
 	
 	/**
 	 * Initiates the automatic path following feature. The robot will follow the path and perform actions as configured.
-	 * 
-	 * The following must be configured before this method is ran:
-	 * - Automode must be enabled. This can be done using the enableAutoMode() method.
-	 * - The drivetrain must be set. This can be done using the setDrive() method.
-	 * - The odometry must be set. This can be done using the setOdometry() method.
-	 * 
+	 *
+	 * @param mecanumDrive The robot's drive base. Only mecanum drives are supported currently.
+	 * @param odometry The robot's odometry.
 	 * @return True if the false completed successfully, false if the path did not (timed out, lost path, etc.).
 	 * @throws IllegalStateException If automatic mode is disabled/not configured or the init has not been ran.
 	 */
-	public boolean followPathAutomatically() {
-		// First, make sure the init has been called. While this does not guarantee the program will run without errors, it is better than nothing.
-		if (!initComplete)
-			throw new IllegalStateException("You must call the init() function before calling followPathAutomatically()");
-		if (autoModeEnabled) 
-			throw new IllegalStateException("Automatic mode is not enabled!");
+	public boolean followPath(MecanumDrive mecanumDrive, Odometry odometry) {
+		// Make sure arguments are not null.
+		if (mecanumDrive == null)
+			throw new IllegalStateException("Path initiation failed. Drivetrain is not set.");
+		if (odometry == null)
+			throw new IllegalStateException("Path initiation failed. Odometry is not set.");
+		// Init the path.
+		init();
 		boolean notUsingTimeout = timeoutMiliseconds == -1;
 		// Next, begin the loop.
 		while(!isFinished()) {
@@ -158,10 +142,10 @@ public class Path extends ArrayList<Waypoint> {
 			// Call the loop function to get the motor powers.
 			double[] motorPowers = loop(robotPosition.getTranslation().getX(), robotPosition.getTranslation().getY(), robotPosition.getHeading());
 			// Update motor speeds.
-			drivetrain.driveRobotCentric(motorPowers[0], motorPowers[1], motorPowers[2]);
+			mecanumDrive.driveRobotCentric(motorPowers[0], motorPowers[1], motorPowers[2]);
 		}
 		// After the path is completed, turn off motors and return false;
-		drivetrain.stopMotor();
+		mecanumDrive.stopMotor();
 		return false;
 	}
 	
@@ -197,14 +181,12 @@ public class Path extends ArrayList<Waypoint> {
 				intersections.add(new TaggedIntersection(point, get(i), i));
 			if (get(i) instanceof PointTurnWaypoint) {
 				// If the second waypoint is a point turn waypoint, decrease the follow radius so the next point is always found.
-				double dx = xPosition - linePoint2.getX();
-				double dy = yPosition - linePoint2.getY();
-				double adjustedRadius = Math.hypot(dx, dy) - 0.01;
+				double dx = linePoint2.getX() - xPosition;
+				double dy = linePoint2.getY() - yPosition;
+				double adjustedRadius = Math.hypot(dx, dy) - 1e-9;
 				if (adjustedRadius < radius) {
-					List<Translation2d> endPoints = PurePursuitUtil.lineCircleIntersection(robotPosition, adjustedRadius, linePoint1, linePoint2);
-					for (Translation2d point : endPoints)
-						// Add results to list.
-						intersections.add(new TaggedIntersection(point, get(i), i));
+					// Add the point to the list.
+					intersections.add(new TaggedIntersection(((PointTurnWaypoint) get(i)).getTranslation(), get(i), i));
 				}
 			}
 			// Now all intersections are recorded.
@@ -232,7 +214,7 @@ public class Path extends ArrayList<Waypoint> {
 		case WAYPOINT_ORDERING_CONTROLLED:
 			bestIntersection = selectWaypointOrderingControlledIntersection(intersections);
 			break;
-		}
+		}		
 		if (retraceEnabled)
 			// If retrace is enabled, store the intersection.
 			lastKnownIntersection = bestIntersection.intersection;
@@ -364,9 +346,11 @@ public class Path extends ArrayList<Waypoint> {
 					pointTurnPriority = true;
 					if (!(bestIntersection.taggedPoint instanceof PointTurnWaypoint)) 
 						bestIntersection = intersection;
+					else if (((PointTurnWaypoint) bestIntersection.taggedPoint).hasTraversed())
+						bestIntersection = intersection;
 					else {
 						// If two intersections associated with a point turn waypoint are found, choose the one closer to the waypoint.
-						if (bestIntersection.waypointIndex < intersection.waypointIndex)
+						if (bestIntersection.waypointIndex > intersection.waypointIndex || ptwaypoint.hasTraversed())
 							// If the intersection is obviously behind.
 							bestIntersection = intersection;
 						else if (bestIntersection.waypointIndex == intersection.waypointIndex)
@@ -448,8 +432,8 @@ public class Path extends ArrayList<Waypoint> {
 		double cx = robotPos.getTranslation().getX();
 		double cy = robotPos.getTranslation().getY();
 		double ca = robotPos.getHeading();
-		double tx = intersection.taggedPoint.getPose().getTranslation().getX();
-		double ty = intersection.taggedPoint.getPose().getTranslation().getY();
+		double tx = intersection.intersection.getX();
+		double ty = intersection.intersection.getY();
 		double ta;
 		double[] motorPowers;
 		if (!waypoint.hasTraversed() && PurePursuitUtil.positionEqualsWithBuffer(robotPos.getTranslation(), waypoint.getTranslation(), waypoint.getPositionBuffer())) {
@@ -506,13 +490,20 @@ public class Path extends ArrayList<Waypoint> {
 		double cx = robotPos.getTranslation().getX();
 		double cy = robotPos.getTranslation().getY();
 		double ca = robotPos.getHeading();
-		double tx = intersection.taggedPoint.getPose().getTranslation().getX();
-		double ty = intersection.taggedPoint.getPose().getTranslation().getY();
+		double tx = intersection.intersection.getX();
+		double ty = intersection.intersection.getY();
 		double ta;
 		double[] motorPowers;
 		if (!waypoint.hasTraversed() && PurePursuitUtil.positionEqualsWithBuffer(robotPos.getTranslation(), waypoint.getTranslation(), waypoint.getPositionBuffer())) {
 			// If the robot has not reached the point.
-			if (((GeneralWaypoint) get(intersection.waypointIndex + 1)).usingPreferredAngle()) {
+			if (waypoint.getType() == WaypointType.END) {
+				if (waypoint.usingPreferredAngle() && !PurePursuitUtil.rotationEqualsWithBuffer(robotPos.getHeading(), waypoint.getPreferredAngle(), waypoint.getRotationBuffer()))
+					ta = waypoint.getPreferredAngle();
+				else {
+					((EndWaypoint) waypoint).setTraversed();
+					return new double[] {0, 0, 0};
+				}
+			} else if (((GeneralWaypoint) get(intersection.waypointIndex + 1)).usingPreferredAngle()) {
 				if (PurePursuitUtil.rotationEqualsWithBuffer(robotPos.getHeading(), ((GeneralWaypoint) get(intersection.waypointIndex + 1)).getPreferredAngle(), waypoint.getRotationBuffer())) {
 					// If the robot has reached the point and is at the preferredAngle, then the point is traversed.
 					waypoint.setTraversed();
@@ -574,64 +565,57 @@ public class Path extends ArrayList<Waypoint> {
 	 * Sets a timeout for the entire path. If the path does not complete within the timeout period, it 
 	 * will abort. This is an optional feature.
 	 * @param timeoutMiliseconds Timeout to be set.
+	 * @return This path, used for chaining methods.
 	 */
-	public void setPathTimeout(long timeoutMiliseconds) {
+	public Path setPathTimeout(long timeoutMiliseconds) {
 		this.timeoutMiliseconds = timeoutMiliseconds;
+		return this;
 	}
 	
 	/**
 	 * Sets the path type to the specified type. By default the path type is WAYPOINT_ORDERING_CONTROLLED.
 	 * @param pathType Path type to be set.
+	 * @return This path, used for chaining methods.
 	 */
-	public void setPathType(PathType pathType) {
+	public Path setPathType(PathType pathType) {
 		this.pathType = pathType;
+		return this;
 	}
 	
 	/**
 	 * Sets the DecelerationController controller to the provided controller.
 	 * @param controller Controllers to be set.
 	 * @throws NullPointerException If the controller is null.
+	 * @return This path, used for chaining methods.
 	 */
-	public void setDecelerationController(DecelerationController controller) {
+	public Path setDecelerationController(DecelerationController controller) {
 		if (controller == null)
 			throw new NullPointerException("The deceleration controller connot be null");
 		decelerationController = controller;
+		return this;
 	}
 	
 	/**
 	 * Sets the timeouts of n waypoints where n is the amount of arguments provided. 
 	 * The nth waypoint timeout is set the the nth argument given.
 	 * @param timeouts Timeouts to be set.
+	 * @return This path, used for chaining methods.
 	 */
-	public void setWaypointTimeouts(long... timeouts) {
+	public Path setWaypointTimeouts(long... timeouts) {
 		for (int i = 0; i < size() && i < timeouts.length; i++)
 			get(i).setTimeout(timeouts[i]);
+		return this;
 	}
 	
 	/**
 	 * Sets the timeout for each individual waypoint to be the value provided. This is not recommended.
 	 * @param timeout Universal timeout to be set.
+	 * @return This path, used for chaining methods.
 	 */
-	public void setWaypointTimeouts(long timeout) {
+	public Path setWaypointTimeouts(long timeout) {
 		for (Waypoint waypoint : this)
 			waypoint.setTimeout(timeout);
-	}
-	
-	/**
-	 * Sets the drive train to the provided mecanum drive. This is only necessary if you are using automatic mode.
-	 * Note: automatic mode currently only supports mecanum drives.
-	 * @param drivetrain MecanumDrive to be set.
-	 */
-	public void setDrive(MecanumDrive drivetrain) {
-		this.drivetrain = drivetrain;
-	}
-	
-	/**
-	 * Sets the odometry. This is only necessary if you are using automatic mode.
-	 * @param odometry Odometry to be set.
-	 */
-	public void setOdometry(Odometry odometry) {
-		this.odometry = odometry;
+		return this;
 	}
 	
 	/**
@@ -640,74 +624,71 @@ public class Path extends ArrayList<Waypoint> {
 	 * turnSpeed = 1
 	 * @param movementSpeed Movement speed to be set.
 	 * @param turnSpeed Turn speed to be set.
+	 * @return This path, used for chaining methods.
 	 */
-	public void setRetraceSettings(double movementSpeed, double turnSpeed) {
+	public Path setRetraceSettings(double movementSpeed, double turnSpeed) {
 		retraceMovementSpeed = normalizeSpeed(movementSpeed);
 		retraceTurnSpeed = normalizeSpeed(turnSpeed);
+		return this;
 	}
 	
 	/**
 	 * Resets all timeouts. 
+	 * @return This path, used for chaining methods.
 	 */
-	public void resetTimeouts() {
+	public Path resetTimeouts() {
 		timedOut = false;
 		lastWaypointTimeStamp = System.currentTimeMillis();
-	}
-	
-	/**
-	 * Enables automatic mode. This mode is designed for teams that are already using many features of FtcLib.
-	 * In this mode, the robot will automatically follow the path and perform configured actions. See documentation 
-	 * to learn how to setup automatic mode.
-	 */
-	public void enableAutoMode() {
-		autoModeEnabled = true;
-	}
-	
-	/**
-	 * Disables automatic mode. Automatic mode is disabled by default.
-	 */
-	public void disableAutoMode() {
-		autoModeEnabled = false;
+		return this;
 	}
 	
 	/**
 	 * Enables retrace. If the robot loses the path and this is enabled, the robot will retrace its moves to try
 	 * to re find the path. This is enabled by default.
+	 * @return This path, used for chaining methods.
 	 */
-	public void enableRetrace() {
+	public Path enableRetrace() {
 		retraceEnabled = true;
+		return this;
 	}
 	
 	/**
 	 * Disables retrace.
+	 * @return This path, used for chaining methods.
 	 */
-	public void disableRetrace() {
+	public Path disableRetrace() {
 		retraceEnabled = false;
+		return this;
 	}
 	
 	/**
 	 * Adds the provided TriggeredActions to the path. These are handled automatically.
 	 * @param actions TriggeredActions to be added.
+	 * @return This path, used for chaining methods.
 	 */
-	public void addTriggeredActions(TriggeredAction... actions) {
+	public Path addTriggeredActions(TriggeredAction... actions) {
 		for (TriggeredAction triggeredAction : actions)
 			triggeredActions.add(triggeredAction);
+		return this;
 	}
 	
 	/**
 	 * Removes the first instance of the provided TriggeredAction from the path. 
 	 * @param action TriggeredAction to be removed
-	 * @return True if the action was found and removed, false otherwise.
+	 * @return This path, used for chaining methods.
 	 */
-	public boolean removeTriggeredAction(TriggeredAction action) {
-		return triggeredActions.remove(action);
+	public Path removeTriggeredAction(TriggeredAction action) {
+		triggeredActions.remove(action);
+		return this;
 	}
 	
 	/**
 	 * Removes all TriggeredActions from the path.
+	 * @return This path, used for chaining methods.
 	 */
-	public void clearTriggeredActions() {
+	public Path clearTriggeredActions() {
 		triggeredActions.clear();
+		return this;
 	}
 	
 	/**

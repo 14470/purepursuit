@@ -29,21 +29,29 @@ public class GeneralWaypoint extends Pose2d implements Waypoint {
 	// The pure pursuit follow radius.
 	private double followRadius;
 	
-	// Preferred angle fields.
-	private double preferredAngle;
+	// True if this waypoint uses a preferred angle.
 	private boolean usePreferredAngle;
+	private double preferredAngle;
+	
+	// True if this waypoint is to inherit the previous node's configuration.  
+	private boolean copyMode;
 	
 	/**
 	 * Constructs a GeneralWaypoint. All values are set to their default.
 	 */
 	public GeneralWaypoint() {
-		// Default value is 0.
+		// Set values to default.
 		movementSpeed = 0;
 		turnSpeed = 0;
 		followRadius = 0;
-		preferredAngle = 0;
 		timeoutMiliseconds = -1;
 		usePreferredAngle = false;
+		copyMode = false;
+	}
+	
+	public GeneralWaypoint(double x, double y) {
+		this(x, y, 0, 0, 0, 0);
+		copyMode = true;
 	}
 	
 	/**
@@ -61,8 +69,9 @@ public class GeneralWaypoint extends Pose2d implements Waypoint {
 		this.turnSpeed = normalizeSpeed(turnSpeed);
 		this.followRadius = followRadius;
 		timeoutMiliseconds = -1;
-		preferredAngle = 0;
-		usePreferredAngle = false;
+		usePreferredAngle = true;
+		preferredAngle = rotation.getRadians();
+		copyMode = false;
 	}
 	
 	/**
@@ -79,8 +88,29 @@ public class GeneralWaypoint extends Pose2d implements Waypoint {
 		this.turnSpeed = normalizeSpeed(turnSpeed);
 		this.followRadius = followRadius;
 		timeoutMiliseconds = -1;
-		preferredAngle = 0;
 		usePreferredAngle = false;
+		preferredAngle = 0;
+		copyMode = false;
+	}
+	
+	/**
+	 * Constructs a GeneralWaypoint with the provided values.
+	 * 
+	 * @param x The x position of this waypoint.
+	 * @param y The y position of this waypoint.
+	 * @param movementSpeed The speed in which the robot moves at while traversing this waypoint, in the range [0, 1].
+	 * @param turnSpeed The speed in which the robot turns at while traversing this waypoint, in the range [0, 1].
+	 * @param followRadius The distance in which the robot traverses this waypoint. Please see guides to learn more about this value.
+	 */
+	public GeneralWaypoint(double x, double y, double movementSpeed, double turnSpeed, double followRadius) {
+		super(x, y, new Rotation2d(0));
+		this.movementSpeed = normalizeSpeed(movementSpeed);
+		this.turnSpeed = normalizeSpeed(turnSpeed);
+		this.followRadius = followRadius;
+		timeoutMiliseconds = -1;
+		usePreferredAngle = false;
+		preferredAngle = 0;
+		copyMode = false;
 	}
 	
 	/**
@@ -99,8 +129,9 @@ public class GeneralWaypoint extends Pose2d implements Waypoint {
 		this.turnSpeed = normalizeSpeed(turnSpeed);
 		this.followRadius = followRadius;
 		timeoutMiliseconds = -1;
-		preferredAngle = 0;
-		usePreferredAngle = false;
+		usePreferredAngle = true;
+		preferredAngle = rotationRadians;
+		copyMode = false;
 	}
 	
 	/**
@@ -128,8 +159,8 @@ public class GeneralWaypoint extends Pose2d implements Waypoint {
 	}
 	
 	/**
-	 * Returns this waypoint's preferred angle.
-	 * @return this waypoint's preferred angle.
+	 * Returns this waypoint's preferred angle (in radians).
+	 * @return this waypoint's preferred angle (in radians).
 	 * @throws IllegalStateException If this waypoint is not using a preferred angle.
 	 */
 	public double getPreferredAngle() {
@@ -149,42 +180,52 @@ public class GeneralWaypoint extends Pose2d implements Waypoint {
 	/**
 	 * Sets the movement speed of this waypoint.
 	 * @param movementSpeed Speed to set.
+	 * @return This GeneralWaypoint, used for chaining methods.
 	 */
-	public void setMovementSpeed(double movementSpeed) {
+	public GeneralWaypoint setMovementSpeed(double movementSpeed) {
 		this.movementSpeed = movementSpeed;
+		return this;
 	}
 	
 	/**
 	 * Sets the turn speed of this waypoint.
 	 * @param turnSpeed Speed to be set.
+	 * @return This GeneralWaypoint, used for chaining methods.
 	 */
-	public void setTurnSpeed(double turnSpeed) {
+	public GeneralWaypoint setTurnSpeed(double turnSpeed) {
 		this.turnSpeed = turnSpeed;
+		return this;
 	}
 	
 	/**
 	 * Sets the follow radius of this waypoint.
 	 * @param followRadius Radius to be set.
+	 * @return This GeneralWaypoint, used for chaining methods.
 	 */
-	public void setFollowRadius(double followRadius) {
+	public GeneralWaypoint setFollowRadius(double followRadius) {
 		this.followRadius = followRadius;
+		return this;
 	}
 	
 	/**
 	 * Sets and enables this waypoint's preferred angle.
 	 * @param angle Angle to be set.
+	 * @return This GeneralWaypoint, used for chaining methods.
 	 */
-	public void setPreferredAngle(double angle) {
+	public GeneralWaypoint setPreferredAngle(double angle) {
 		usePreferredAngle = true;
 		preferredAngle = angle;
+		return this;
 	}
 	
 	/**
 	 * Disables this waypoint's preferredAngle. This is disabled by default.
+	 * @return This GeneralWaypoint, used for chaining methods.
 	 */
-	public void disablePreferredAngle() {
+	public GeneralWaypoint disablePreferredAngle() {
 		usePreferredAngle = false;
 		preferredAngle = 0;
+		return this;
 	}
 	
 	/**
@@ -198,6 +239,26 @@ public class GeneralWaypoint extends Pose2d implements Waypoint {
 		if (raw < 0)
 			return 0;
 		return raw;
+	}
+	
+	/**
+	 * Copies configuration from the given waypoint. Does nothing if copy mode is disabled.
+	 * @param waypoint Waypoint to copy.
+	 */
+	public void inherit(Waypoint waypoint) {
+		if (!copyMode)
+			return;
+		if (!(waypoint instanceof GeneralWaypoint))
+			throw new IllegalArgumentException("A " + getType() + " waypoint cannot inherit the configuration of a " + waypoint.getType() + " waypoint.");
+		GeneralWaypoint w = (GeneralWaypoint) waypoint;
+		setMovementSpeed(w.getMovementSpeed());
+		setTurnSpeed(w.getTurnSpeed());
+		setFollowRadius(w.getFollowRadius());
+		setTimeout(w.getTimeout());
+		if (w.usingPreferredAngle())
+			setPreferredAngle(w.getPreferredAngle());
+		else
+			usePreferredAngle = false;
 	}
 	
 	@Override

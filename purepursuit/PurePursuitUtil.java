@@ -95,7 +95,7 @@ public final class PurePursuitUtil {
 		
 		if (turnOnly)
 			// If turnOnly is true, only return a turn power.
-			return new double[] {0, 0, angleWrap(ca - ta) / Math.PI};
+			return new double[] {0, 0, -angleWrap(ca - ta) / Math.PI};
 			
 		
 		double absoluteXToPosition = tx - cx;
@@ -111,13 +111,13 @@ public final class PurePursuitUtil {
         
         double powerX = relativeXToPosition / (Math.abs(relativeXToPosition) + Math.abs(relativeYToPosition));
         double powerY = relativeYToPosition / (Math.abs(relativeXToPosition) + Math.abs(relativeYToPosition));
-        double powerTurn = angleWrap(ca - ta) / Math.PI;
+        double powerTurn = -angleWrap(ca - ta) / Math.PI;
         
         rawMotorPowers = new double[3];
         
         // The x and y powers need to be swapped and have their signs flipped.
-        rawMotorPowers[0] = -powerY;
-        rawMotorPowers[1] = -powerX;
+        rawMotorPowers[0] = powerX;
+        rawMotorPowers[1] = powerY;
         rawMotorPowers[2] = powerTurn;
         
         return rawMotorPowers;

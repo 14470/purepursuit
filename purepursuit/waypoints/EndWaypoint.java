@@ -79,6 +79,14 @@ public class EndWaypoint extends InterruptWaypoint {
 	}
 	
 	/**
+	 * Sets this endpoint as traversed.
+	 */
+	@Override
+	public void setTraversed() {
+		isFinished = true;
+	}
+	
+	/**
 	 * Returns true if the robot has reached this point and the path is finished, false otherwise.
 	 * @return true if the robot has reached this point and the path is finished, false otherwise.
 	 */
