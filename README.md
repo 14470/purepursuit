@@ -1,3 +1,28 @@
+# purepursuit
+**Implementation of the adaptive Pure Pursuit controller for FTC robots**
+![purepursuitdemonstration](https://camo.githubusercontent.com/aa027d031d248e18960aa6770ee0a4a26c62ad86/68747470733a2f2f692e696d6775722e636f6d2f434b654d386e572e676966)
+## Getting Started
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 ## NOTICE
 
 This repository contains the public FTC SDK for the SKYSTONE (2019-2020) competition season.  
