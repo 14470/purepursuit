@@ -1,29 +1,27 @@
 # purepursuit
+
 **Implementation of the adaptive Pure Pursuit controller for FTC robots**
 ![purepursuitdemonstration](https://camo.githubusercontent.com/aa027d031d248e18960aa6770ee0a4a26c62ad86/68747470733a2f2f692e696d6775722e636f6d2f434b654d386e572e676966)
+
+## Introduction
+
+Pure pursuit is a pathing algorithm and motion profiling library that allows a robot to smoothly traverse a “rigid” path. A main feature of the controller is rounding corners in a linear turn. This controller is most commonly used in autonomous programs with the
+ability to plan paths on the fly with the built in GUI. This library currently does not have feedforward or closed loop capabilties.
+This means that Pure Pursuit must be used with dead wheel odometry. The repository is set up for a three wheel configuration 
+(*recommended and most accurate configuration*) but can be adapted easily for a two wheel with use of the gyro configuration.   
+
 ## Getting Started
 
+To use this library with your robot, clone or download this repository or if you want to add it to your current android studio project,
+download the code in the [Teamcode](https://github.com/AlessioToniolo/purepursuit/tree/master/TeamCode/src/main/java/org/firstinspires/ftc/teamcode) folder. There are no
+external dependencies needed so you will be good to go. This library comes with pre-made field ready samples for teamss who want to 
+immediately start using Pure Pursuit.
 
 
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-## NOTICE
+### NOTICE
 
 This repository contains the public FTC SDK for the SKYSTONE (2019-2020) competition season.  
 
