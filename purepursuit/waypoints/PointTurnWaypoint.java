@@ -9,7 +9,8 @@ import com.arcrobotics.ftclib.purepursuit.types.WaypointType;
  * A point turn waypoint is a special type of waypoint where instead of "curving" around it, the
  * robot will travel to it, make a complete stop, turn towards the next waypoint, and continue.
  * 
- * @version 1.0
+ * @version 1.1
+ * @author Michael Baljet, Team 14470
  *
  */
 public class PointTurnWaypoint extends GeneralWaypoint {
@@ -121,17 +122,21 @@ public class PointTurnWaypoint extends GeneralWaypoint {
 	/**
 	 * Sets this waypoint's position buffer.
 	 * @param buffer Position buffer to be set.
+	 * @return This PointTurnWaypoint, used for chaining methods.
 	 */
-	public void setPositionBuffer(double buffer) {
+	public PointTurnWaypoint setPositionBuffer(double buffer) {
 		positionBuffer = verifyBuffer(buffer);
+		return this;
 	}
 	
 	/**
 	 * Sets this waypoint's rotation buffer.
 	 * @param buffer Rotation buffer to be set.
+	 * @return This PointTurnWaypoint, used for chaining methods.
 	 */
-	public void setRotationBuffer(double buffer) {
+	public PointTurnWaypoint setRotationBuffer(double buffer) {
 		rotationBuffer = verifyBuffer(buffer);
+		return this;
 	}
 	
 	/**
@@ -161,8 +166,18 @@ public class PointTurnWaypoint extends GeneralWaypoint {
 	}
 	
 	@Override
+	public void reset() {
+		traversed = false;
+	}
+	
+	@Override
 	public WaypointType getType() {
 		return WaypointType.POINT_TURN;
 	}
+	
+	@Override
+    public String toString() {
+        return String.format("PointTurnWaypoint(%s, %s)", getTranslation().getX(), getTranslation().getY());
+    }
 	
 }

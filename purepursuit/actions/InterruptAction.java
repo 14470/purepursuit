@@ -8,6 +8,7 @@ import com.arcrobotics.ftclib.purepursuit.waypoints.InterruptWaypoint;
  * 
  * @see InterruptWaypoint
  * @version 1.0
+ * @author Michael Baljet, Team 14470
  *
  */
 public interface InterruptAction {

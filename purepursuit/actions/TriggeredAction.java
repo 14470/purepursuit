@@ -6,7 +6,8 @@ package com.arcrobotics.ftclib.purepursuit.actions;
  * triggers when the robot move above some Y value on the field. 
  * 
  * @see Path
- * @version 1.0
+ * @version 1.1
+ * @author Michael Baljet, Team 14470
  *
  */
 public abstract class TriggeredAction {
@@ -22,6 +23,13 @@ public abstract class TriggeredAction {
 			doAction(alreadyPerformed);
 			alreadyPerformed = true;
 		}
+	}
+	
+	/**
+	 * Resets this actions.
+	 */
+	public void reset() {
+		alreadyPerformed = false;
 	}
 	 
 	/**

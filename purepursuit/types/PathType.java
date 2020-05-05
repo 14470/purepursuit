@@ -7,6 +7,7 @@ import com.arcrobotics.ftclib.purepursuit.Path;
  * 
  * @see Path
  * @version 1.0
+ * @author Michael Baljet, Team 14470
  *
  */
 public enum PathType {

@@ -11,7 +11,8 @@ import com.arcrobotics.ftclib.purepursuit.types.WaypointType;
  * to face this waypoint's preferred angle, perform the supplied action, then turn towards the next
  * waypoint and continue. This is useful for having the robot perform actions "mid path".
  * 
- * @version 1.0
+ * @version 1.1
+ * @author Michael Baljet, Team 14470
  *
  */
 public class InterruptWaypoint extends PointTurnWaypoint {
@@ -111,9 +112,11 @@ public class InterruptWaypoint extends PointTurnWaypoint {
 	/**
 	 * Sets the action of this InterruptWaypoint.
 	 * @param action Action to be set.
+	 * @return This InterruptWaypoint, used for chaining methods.
 	 */
-	public void setAction(InterruptAction action) {
+	public InterruptWaypoint setAction(InterruptAction action) {
 		this.action = action;
+		return this;
 	}
 	
 	/**
@@ -135,8 +138,19 @@ public class InterruptWaypoint extends PointTurnWaypoint {
 	}
 	
 	@Override
+	public void reset() {
+		super.reset();
+		actionPerformed = false;
+	}
+	
+	@Override
 	public WaypointType getType() {
 		return WaypointType.INTERRUPT;
 	}
+	
+	@Override
+    public String toString() {
+        return String.format("InterruptWaypoint(%s, %s)", getTranslation().getX(), getTranslation().getY());
+    }
 	
 }

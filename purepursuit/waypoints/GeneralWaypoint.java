@@ -12,7 +12,8 @@ import com.arcrobotics.ftclib.purepursuit.types.WaypointType;
  * types of waypoints are sub classes of this.
  * 
  * @see Waypoint
- * @version 1.0
+ * @version 1.1
+ * @author Michael Baljet, Team 14470
  *
  */
 public class GeneralWaypoint extends Pose2d implements Waypoint {
@@ -219,6 +220,16 @@ public class GeneralWaypoint extends Pose2d implements Waypoint {
 	}
 	
 	/**
+	 * Sets the timeout period of this waypoint. This is optional.
+	 * @param timeoutMiliseconds The timeout period of this waypoint.
+	 * @return This GeneralWaypoint, used for chaining methods.
+	 */
+	public GeneralWaypoint setTimeout(long timeoutMiliseconds) {
+		this.timeoutMiliseconds = timeoutMiliseconds;
+		return this;
+	}
+	
+	/**
 	 * Disables this waypoint's preferredAngle. This is disabled by default.
 	 * @return This GeneralWaypoint, used for chaining methods.
 	 */
@@ -226,6 +237,13 @@ public class GeneralWaypoint extends Pose2d implements Waypoint {
 		usePreferredAngle = false;
 		preferredAngle = 0;
 		return this;
+	}
+	
+	/**
+	 * Resets this waypoint. This is called by Path.
+	 */
+	public void reset() {
+		// GeneralWaypoints don't have anything to reset.
 	}
 	
 	/**
@@ -277,13 +295,13 @@ public class GeneralWaypoint extends Pose2d implements Waypoint {
 	}
 
 	@Override
-	public void setTimeout(long timeoutMiliseconds) {
-		this.timeoutMiliseconds = timeoutMiliseconds;
-	}
-
-	@Override
 	public long getTimeout() {
 		return timeoutMiliseconds;
 	}
+	
+	@Override
+    public String toString() {
+        return String.format("GeneralWaypoint(%s, %s)", getTranslation().getX(), getTranslation().getY());
+    }
 	
 }

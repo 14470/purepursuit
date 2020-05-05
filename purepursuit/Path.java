@@ -22,24 +22,36 @@ import com.arcrobotics.ftclib.purepursuit.waypoints.PointTurnWaypoint;
  * This class represents a pure pursuit path. It is used to store a path's waypoints, and do all the
  * calculation required to traverse the path. A path can be implemented in two different way. The first
  * way is running the loop/updating motor powers manually. This is a good implementation for those teams
- * who wish to just use the pure pursuit section FtcLib and not much else. The other possible implementation
+ * who wish to just use the pure pursuit section FtcLib and not much else. The other implementation
  * is using the automatic feature. This features does all the hard work for you. Teams who use FtcLib's
  * features to power most of their code will find this method appealing. 
  * 
  * To learn how to implement a pure pursuit path, please see the example implementations and tutorials.
  * 
  * @see Waypoint
- * @version 1.0
+ * @version 1.3
+ * @author Michael Baljet, Team 14470
  *
  */
 @SuppressWarnings("serial")
 public class Path extends ArrayList<Waypoint> {
 	
+	// The default motion profile. 
+	private static PathMotionProfile defaultMotionProfile = null;
+	
+	/**
+	 * Sets the default motion profile.
+	 * @param profile Motion profile to be set.
+	 */
+	public static void setDefaultMotionProfile(PathMotionProfile profile) {
+		defaultMotionProfile = profile;
+	}
+	
 	// This path's type (Heading controlled or waypoint ordering controlled).
 	private PathType pathType;
 	
-	// Deceleration profile.
-	private DecelerationController decelerationController;
+	// Motion profile.
+	private PathMotionProfile motionProfile;
 	
 	// Timeout fields. 
 	private long timeoutMiliseconds;
@@ -80,7 +92,7 @@ public class Path extends ArrayList<Waypoint> {
 			add(waypoint);
 		pathType = PathType.WAYPOINT_ORDERING_CONTROLLED;
 		timeoutMiliseconds = -1;
-		timeSinceStart = 0;
+		timeSinceStart = -1;
 		lastWaypointTimeStamp = 0;
 		retraceMovementSpeed = 1;
 		retraceTurnSpeed = 1;
@@ -89,13 +101,13 @@ public class Path extends ArrayList<Waypoint> {
 		timedOut = false;
 		triggeredActions = new ArrayList<TriggeredAction>();
 		interruptActionQueue = new LinkedList<InterruptWaypoint>();
-		decelerationController = generateDefaultDecelerationController();
+		motionProfile = getDefaultMotionProfile();
 		lastWaypoint = null;
 	}
 	
 	/**
 	 * Initiates the path. This must be ran before using the path. This checks to make sure everything 
-	 * in the path is valid. Please use isLegalPath() before calling this. 
+	 * in the path is valid. Use isLegalPath() to check if a path is valid. 
 	 * 
 	 * In order for a path to be considered legal it must have:
 	 * - At least 2 waypoints.
@@ -108,6 +120,8 @@ public class Path extends ArrayList<Waypoint> {
 	public void init() {
 		// Verify that the path is valid.
 		verifyLegality();
+		// Reset the path.
+		reset();
 		// Configure unconfigured waypoints.
 		for (int i = 1; i < size(); i++) 
 			((GeneralWaypoint) get(i)).inherit(get(i - 1));
@@ -120,7 +134,7 @@ public class Path extends ArrayList<Waypoint> {
 	 *
 	 * @param mecanumDrive The robot's drive base. Only mecanum drives are supported currently.
 	 * @param odometry The robot's odometry.
-	 * @return True if the false completed successfully, false if the path did not (timed out, lost path, etc.).
+	 * @return True if the path completed successfully, false if the path did not (timed out, lost path, etc.).
 	 * @throws IllegalStateException If automatic mode is disabled/not configured or the init has not been ran.
 	 */
 	public boolean followPath(MecanumDrive mecanumDrive, Odometry odometry) {
@@ -131,39 +145,59 @@ public class Path extends ArrayList<Waypoint> {
 			throw new IllegalStateException("Path initiation failed. Odometry is not set.");
 		// Init the path.
 		init();
-		boolean notUsingTimeout = timeoutMiliseconds == -1;
 		// Next, begin the loop.
 		while(!isFinished()) {
-			// If the path has timed out, break the loop and return true;
-			if (notUsingTimeout || System.currentTimeMillis() - timeSinceStart < timeoutMiliseconds)
-				return true;
 			// Get the robot's current position using the odometry.
 			Pose2d robotPosition = odometry.getPose();
 			// Call the loop function to get the motor powers.
 			double[] motorPowers = loop(robotPosition.getTranslation().getX(), robotPosition.getTranslation().getY(), robotPosition.getHeading());
 			// Update motor speeds.
 			mecanumDrive.driveRobotCentric(motorPowers[0], motorPowers[1], motorPowers[2]);
+			if (!isFinished()) {
+				boolean pathAborted = true;
+				// If the has stopped, then the path has timed out or lost the path.
+				for (double power : motorPowers)
+					if (power != 0)
+						pathAborted = false;
+				if (pathAborted)
+					return false;
+			}
+			
 		}
 		// After the path is completed, turn off motors and return false;
 		mecanumDrive.stopMotor();
-		return false;
+		return true;
 	}
 	
 	/**
 	 * This is the principle path method. After everything is configured and initiated, this method can be used.
-	 * Taking in the robot's x, y, and rotation, this method calculates the appropriate motor powers for the 
-	 * robot to follow the path. This method also calls all triggered/interrupted actions automatically.
+	 * Using the robot's x, y, and rotation, this method calculates the appropriate motor powers for the 
+	 * robot to follow the path. This method calls all triggered/interrupted actions automatically. If this 
+	 * returns zero motor speeds {0, 0, 0} that means the path has either (1) timed out, (2) lost the path and
+	 * retrace was disabled, or (3) reached the destination. Use isFinished() and timedOut() to troubleshoot.
 	 * 
 	 * @param xPosition Robot's current x position.
 	 * @param yPosition Robot's current y position.
 	 * @param rotation Robot's current rotation.
 	 * @return A double array containing the motor powers. a[0] is the x power, a[1] is the y power, and a[2] is the turn power.
 	 */
-	@SuppressWarnings("incomplete-switch")
 	public double[] loop(double xPosition, double yPosition, double rotation) {
 		// First, make sure the init has been called. While this does not guarantee the program will run without errors, it is better than nothing.
 		if (!initComplete)
 			throw new IllegalStateException("You must call the init() function before calling loop()");
+		if (timedOut)
+			// If this path has timed out, return no motor speeds.
+			return new double[] {0, 0, 0};
+		if (timeoutMiliseconds != -1)
+			// If this path has a timeout.
+			if (timeSinceStart == -1)
+				timeSinceStart = System.currentTimeMillis();
+			else
+				if (timeSinceStart + timeoutMiliseconds < System.currentTimeMillis()) {
+					timedOut = true;
+					// If the path has timed out, return no speeds.
+					return new double[] {0, 0, 0};
+				}
 		// Next, loop triggered and perform interrupted actions.
 		loopTriggeredActions();
 		runQueuedInterruptActions();
@@ -214,7 +248,7 @@ public class Path extends ArrayList<Waypoint> {
 		case WAYPOINT_ORDERING_CONTROLLED:
 			bestIntersection = selectWaypointOrderingControlledIntersection(intersections);
 			break;
-		}		
+		}
 		if (retraceEnabled)
 			// If retrace is enabled, store the intersection.
 			lastKnownIntersection = bestIntersection.intersection;
@@ -225,25 +259,34 @@ public class Path extends ArrayList<Waypoint> {
 		}
 		if (bestIntersection.taggedPoint.getTimeout() != -1)
 			// If this waypoint has a timeout, make sure it hasn't timed out.
-			if (System.currentTimeMillis() > lastWaypointTimeStamp + bestIntersection.taggedPoint.getTimeout())
-				// If it has, return null.
-				return null;
+			if (System.currentTimeMillis() > lastWaypointTimeStamp + bestIntersection.taggedPoint.getTimeout()) {
+				timedOut = true;
+				// If it has, return no motor speeds.
+				return new double[] {0, 0, 0};
+			}
 		// After the best intersection is found, the robot behaves differently depending on the type of waypoint.
 		double[] motorPowers = new double[] {0, 0, 0};
+		Pose2d robotPos =  new Pose2d(xPosition, yPosition, new Rotation2d(rotation));
 		switch(bestIntersection.taggedPoint.getType()) {
 		case GENERAL:
-			motorPowers = handleGeneralIntersection(bestIntersection, new Pose2d(xPosition, yPosition, new Rotation2d(rotation)));
+			motorPowers = handleGeneralIntersection(bestIntersection, robotPos);
 			break;
 		case POINT_TURN:
-			motorPowers = handlePointTurnIntersection(bestIntersection, new Pose2d(xPosition, yPosition, new Rotation2d(rotation)));
+			motorPowers = handlePointTurnIntersection(bestIntersection, robotPos);
 			break;
 		case INTERRUPT:
-			motorPowers = handleInterruptIntersection(bestIntersection, new Pose2d(xPosition, yPosition, new Rotation2d(rotation)));
+			motorPowers = handleInterruptIntersection(bestIntersection, robotPos);
 			break;
 		case END:
-			motorPowers = handleEndIntersection(bestIntersection, new Pose2d(xPosition, yPosition, new Rotation2d(rotation)));
+			motorPowers = handleEndIntersection(bestIntersection, robotPos);
 			break;
+		case START:
+			// This should never happen.
+			throw new IllegalStateException("Path has lost integrity.");
 		}
+		// Adjust speeds.
+		adjustSpeedsWithProfile(motorPowers, bestIntersection, robotPos.getTranslation());
+		normalizeMotorSpeeds(motorPowers);
 		// Return the motor powers.
 		return motorPowers;
 	}
@@ -404,10 +447,7 @@ public class Path extends ArrayList<Waypoint> {
 			ta = Math.atan2(ty - cy, tx - cx);
 		// Get raw motor powers.
 		double[] motorPowers = PurePursuitUtil.moveToPosition(cx, cy, ca, tx, ty, ta, false);
-		// Adjust speed.
-		motorPowers[0] *= waypoint.getMovementSpeed();
-		motorPowers[1] *= waypoint.getMovementSpeed();
-		motorPowers[2] *= waypoint.getTurnSpeed();
+		// Return motor speeds.
 		return motorPowers;
 	}
 	
@@ -463,8 +503,7 @@ public class Path extends ArrayList<Waypoint> {
 				ta = Math.atan2(ty - cy, tx - cx);
 			motorPowers = PurePursuitUtil.moveToPosition(cx, cy, ca, tx, ty, ta, false);
 		}
-		// Manage motor speeds.
-		decelerationController.process(motorPowers, Math.hypot(tx - cx, ty - cy), waypoint.getMovementSpeed(), waypoint.getTurnSpeed());
+		// Return motor speeds.
 		return motorPowers;
 	}
 	
@@ -538,8 +577,7 @@ public class Path extends ArrayList<Waypoint> {
 				ta = Math.atan2(ty - cy, tx - cx);
 			motorPowers = PurePursuitUtil.moveToPosition(cx, cy, ca, tx, ty, ta, false);
 		}
-		// Manage motor speeds.
-		decelerationController.process(motorPowers, Math.hypot(tx - cx, ty - cy), waypoint.getMovementSpeed(), waypoint.getTurnSpeed());
+		// Return motor speeds.
 		return motorPowers;
 	}
 	
@@ -574,6 +612,7 @@ public class Path extends ArrayList<Waypoint> {
 	
 	/**
 	 * Sets the path type to the specified type. By default the path type is WAYPOINT_ORDERING_CONTROLLED.
+	 * This is not recommended, do not change the path type unless you know what you are doing.
 	 * @param pathType Path type to be set.
 	 * @return This path, used for chaining methods.
 	 */
@@ -583,15 +622,15 @@ public class Path extends ArrayList<Waypoint> {
 	}
 	
 	/**
-	 * Sets the DecelerationController controller to the provided controller.
-	 * @param controller Controllers to be set.
+	 * Sets this path's motion profile to the provided PathMotionProfile.
+	 * @param profile PathMotionProfile to be set.
 	 * @throws NullPointerException If the controller is null.
 	 * @return This path, used for chaining methods.
 	 */
-	public Path setDecelerationController(DecelerationController controller) {
-		if (controller == null)
-			throw new NullPointerException("The deceleration controller connot be null");
-		decelerationController = controller;
+	public Path setMotionProfile(PathMotionProfile profile) {
+		if (profile == null)
+			throw new NullPointerException("The motion profile connot be null");
+		motionProfile = profile;
 		return this;
 	}
 	
@@ -603,7 +642,8 @@ public class Path extends ArrayList<Waypoint> {
 	 */
 	public Path setWaypointTimeouts(long... timeouts) {
 		for (int i = 0; i < size() && i < timeouts.length; i++)
-			get(i).setTimeout(timeouts[i]);
+			if (get(i) instanceof GeneralWaypoint)
+				((GeneralWaypoint) get(i)).setTimeout(timeouts[i]);
 		return this;
 	}
 	
@@ -614,7 +654,8 @@ public class Path extends ArrayList<Waypoint> {
 	 */
 	public Path setWaypointTimeouts(long timeout) {
 		for (Waypoint waypoint : this)
-			waypoint.setTimeout(timeout);
+			if (waypoint instanceof GeneralWaypoint)
+				((GeneralWaypoint) waypoint).setTimeout(timeout);
 		return this;
 	}
 	
@@ -731,6 +772,18 @@ public class Path extends ArrayList<Waypoint> {
 	}
 	
 	/**
+	 * Resets all the waypoints/timeouts/actions in this path. Called by the init.
+	 */
+	public void reset() {
+		resetTimeouts();
+		for (Waypoint waypoint : this)
+			if (waypoint instanceof GeneralWaypoint)
+				((GeneralWaypoint) waypoint).reset();
+		for (TriggeredAction actions : triggeredActions) 
+			actions.reset();
+	}
+	
+	/**
 	 * Normalizes the given raw speed to be in the range [0, 1]
 	 * @param raw Raw speed value to be normalized.
 	 * @return Normalized speed value.
@@ -779,23 +832,93 @@ public class Path extends ArrayList<Waypoint> {
 	 */
 	private void runQueuedInterruptActions() {
 		while(!interruptActionQueue.isEmpty())
-			interruptActionQueue.remove().performAction();;
+			interruptActionQueue.remove().performAction();
 	}
 	
 	/**
-	 * Generates and returns the default DecelerationController.
-	 * @return the default DecelerationController.
+	 * Adjusts the motor speeds based on this path's motion profile.
+	 * @param speeds Speeds to be adjusted.
+	 * @param intersection The tagged intersection.
 	 */
-	private DecelerationController generateDefaultDecelerationController() {
-		return new DecelerationController() {
-			@Override
-			public void decelerateMotorSpeeds(double[] motorSpeeds, double distanceToTarget, double lastDistanceToTarget, long timeSinceLastCallNano, double configuredMovementSpeed, double configuredTurnSpeed) {
-				// This is the default deceleration profile. In the future versions, this will implement a smarter method.
-				motorSpeeds[0] *= configuredMovementSpeed;
-				motorSpeeds[1] *= configuredMovementSpeed;
-				motorSpeeds[2] *= configuredTurnSpeed;
-			}
-		};
+	private void adjustSpeedsWithProfile(double[] speeds, TaggedIntersection intersection, Translation2d robotPos) {
+		// Get closest away and to points.
+		Translation2d awayPoint = null;
+		for (int i = intersection.waypointIndex - 1; i >= 0; i--)
+			if (get(i).getType() == WaypointType.START || get(i) instanceof PointTurnWaypoint) {
+				awayPoint = get(i).getPose().getTranslation();
+				break;
+			} 
+		if (awayPoint == null) 
+			// This should never happen.
+			throw new IllegalStateException("Path has lost integrity.");
+		Translation2d toPoint = intersection.taggedPoint.getPose().getTranslation();
+		// Get delta values.
+		double adx = robotPos.getX() - awayPoint.getX();
+		double ady = robotPos.getY() - awayPoint.getY();
+		double tdx = toPoint.getX() - robotPos.getX();
+		double tdy = toPoint.getY() - robotPos.getY();
+		double ad = Math.hypot(adx, ady);
+		double td = Math.hypot(tdx, tdy);
+		if (ad < td)
+			// If the intersection is closer to the away point.
+			motionProfile.processAccelerate(speeds, ad, ((GeneralWaypoint) intersection.taggedPoint).getMovementSpeed(), ((GeneralWaypoint) intersection.taggedPoint).getTurnSpeed());
+		else
+			// If the intersection is closer to the to point.
+			motionProfile.processDecelerate(speeds, td, ((GeneralWaypoint) intersection.taggedPoint).getMovementSpeed(), ((GeneralWaypoint) intersection.taggedPoint).getTurnSpeed());
+	}
+	
+	/**
+	 * Generates and returns the default PathMotionProfile.
+	 * @return the default PathMotionProfile.
+	 */
+	private PathMotionProfile getDefaultMotionProfile() {
+		if (defaultMotionProfile != null)
+			return defaultMotionProfile;
+		else
+			// Use the default motion profile. This may be updated in later versions.
+			// The default profile is a messy trapezoid(ish) curve.
+			return new PathMotionProfile() {
+				@Override
+				public void decelerate(double[] motorSpeeds, double distanceToTarget, double speed, double configuredMovementSpeed, double configuredTurnSpeed) {
+					if (distanceToTarget < 0.15) {
+						motorSpeeds[0] *= configuredMovementSpeed * ((distanceToTarget * 10) + 0.1);
+						motorSpeeds[1] *= configuredMovementSpeed * ((distanceToTarget * 10) + 0.1);
+						motorSpeeds[2] *= configuredTurnSpeed;
+					} else {
+						motorSpeeds[0] *= configuredMovementSpeed;
+						motorSpeeds[1] *= configuredMovementSpeed;
+						motorSpeeds[2] *= configuredTurnSpeed;
+					}
+				}
+				@Override
+				public void accelerate(double[] motorSpeeds, double distanceFromTarget, double speed, double configuredMovementSpeed, double configuredTurnSpeed) {
+					if (distanceFromTarget < 0.15) {
+						motorSpeeds[0] *= configuredMovementSpeed * ((distanceFromTarget * 10) + 0.1);
+						motorSpeeds[1] *= configuredMovementSpeed * ((distanceFromTarget * 10) + 0.1);
+						motorSpeeds[2] *= configuredTurnSpeed;
+					} else {
+						motorSpeeds[0] *= configuredMovementSpeed;
+						motorSpeeds[1] *= configuredMovementSpeed;
+						motorSpeeds[2] *= configuredTurnSpeed;
+					}
+				}
+			};
+	}
+	
+	/**
+	 * Normalizes the provided motor speeds to be in the range [-1, 1].
+	 * @param speeds Motor speeds to normalize.
+	 */
+	private void normalizeMotorSpeeds(double[] speeds) {
+		double max = Math.max(Math.abs(speeds[0]), Math.abs(speeds[1]));
+		if (max > 1) {
+			speeds[0] /= max;
+			speeds[1] /= max;
+		}
+		if (speeds[2] > 1)
+			speeds[2] = 1;
+		else if (speeds[2] < -1)
+			speeds[2] = -1;
 	}
 	
 	/**

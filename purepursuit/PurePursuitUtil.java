@@ -11,6 +11,7 @@ import com.arcrobotics.ftclib.geometry.Translation2d;
  * This class contains various static methods that are used in the pure pursuit algorithm.
  * 
  * @version 1.0
+ * @author Michael Baljet, Team 14470
  *
  */
 public final class PurePursuitUtil {

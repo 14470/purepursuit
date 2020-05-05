@@ -11,7 +11,8 @@ import com.arcrobotics.ftclib.purepursuit.types.WaypointType;
  * of these. This waypoint's action cannot be changed.
  *
  * @see InterruptWaypoint
- * @version 1.0
+ * @version 1.1
+ * @author Michael Baljet, Team 14470
  *
  */
 public class EndWaypoint extends InterruptWaypoint {
@@ -95,7 +96,7 @@ public class EndWaypoint extends InterruptWaypoint {
 	}
 	
 	@Override
-	public void setAction(InterruptAction action) {
+	public InterruptWaypoint setAction(InterruptAction action) {
 		// You cannot change the action of an end waypoint.
 		throw new IllegalArgumentException("You cannot change the action of an end waypoint.");
 	}
@@ -115,8 +116,19 @@ public class EndWaypoint extends InterruptWaypoint {
 	}
 	
 	@Override
+	public void reset() {
+		super.reset();
+		isFinished = false;
+	}
+	
+	@Override
 	public WaypointType getType() {
 		return WaypointType.END;
 	}
+	
+	@Override
+    public String toString() {
+        return String.format("EndWaypoint(%s, %s)", getTranslation().getX(), getTranslation().getY());
+    }
 	
 }

@@ -8,7 +8,8 @@ import com.arcrobotics.ftclib.purepursuit.types.WaypointType;
  * one can construct a pure pursuit path for their robot to follow.
  * 
  * @see GeneralWaypoint, EndWaypoint, StartWaypoint, PointTurnWaypoint, InterruptWaypoint
- * @version 1.0
+ * @version 1.2
+ * @author Michael Baljet, Team 14470
  *
  */
 public interface Waypoint {
@@ -30,12 +31,6 @@ public interface Waypoint {
 	 * @return the follow distance for this waypoint.
 	 */
 	public double getFollowDistance();
-	
-	/**
-	 * Sets the timeout period of this waypoint. This is optional.
-	 * @param timeoutMiliseconds The timeout period of this waypoint.
-	 */
-	public void setTimeout(long timeoutMiliseconds);
 	
 	/**
 	 * Returns the timeout period of this waypoint.

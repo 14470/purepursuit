@@ -11,7 +11,8 @@ import com.arcrobotics.ftclib.purepursuit.types.WaypointType;
  * very simplified because the robot will never need to traverse it.
  *
  * @see Waypoint
- * @version 1.0
+ * @version 1.1
+ * @author Michael Baljet, Team 14470
  *
  */
 public class StartWaypoint extends Pose2d implements Waypoint {
@@ -67,14 +68,13 @@ public class StartWaypoint extends Pose2d implements Waypoint {
 	}
 
 	@Override
-	public void setTimeout(long timeoutMiliseconds) {
-		this.timeoutMiliseconds = timeoutMiliseconds;
-		
-	}
-
-	@Override
 	public long getTimeout() {
 		return timeoutMiliseconds;
 	}
+	
+	@Override
+    public String toString() {
+        return String.format("StartWaypoint(%s, %s)", getTranslation().getX(), getTranslation().getY());
+    }
 	
 }
